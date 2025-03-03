@@ -1,0 +1,1000 @@
+---
+title: "LLM_OI"
+output: html_document
+date: "2025-01-30"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("readxl") 
+#install.packages("vader")
+#install.packages("wordcloud")
+#install.packages("tidytext")
+#install.packages("udpipe")
+
+
+# Load the package
+library(udpipe)
+library(dplyr)
+library(tidytext)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(text)
+library(vader)
+library(readxl)
+library(ggplot2)
+library(purrr)
+library(wordcloud)
+library(stringr)
+library(pwr)
+
+```
+# Power analysis
+```{r}
+pwr.anova.test(k = 4, f = 0.255, sig.level = 0.05, power = 0.80)
+
+
+```
+
+# Load in datasets
+Loading in all 4 conditions and ensuring that they are labelled by condition
+
+```{r}
+# Load in other-imagine LLM condition
+orig_oi_llm <- read_csv("LLM+Chatbots+Empathy+Intervention+-OI_5+February+2025_13.33.csv", show_col_types = FALSE) %>%
+ select(StartDate, EndDate, Progress, ResponseId, `Time_First Click`, `Time_Page Submit`, 
+         q1, q2, q3, starts_with("MSE_"), PROLIFIC_PID) %>%
+  mutate(
+    condition = "oi_llm",   # Set the condition column to "oi_llm"
+    medium = "llm",         # Set the medium column to "llm"
+    pp = "oi"               # Set the pp column to "oi"
+  )
+
+# View the modified dataset
+head(orig_oi_llm)
+
+# Load in self-imagine LLM condition
+orig_si_llm <- read_csv("/LLM+Chatbots+Empathy+Intervention+-SI_5+February+2025_13.33.csv", show_col_types = FALSE) %>%
+  filter(q1 == "I do") %>%  # Keep only rows where q1 is "I do"
+select(StartDate, EndDate, Progress, ResponseId, `Time_First Click`, `Time_Page Submit`, 
+         q1, q2, q3, starts_with("MSE_"), PROLIFIC_PID) %>%
+  mutate(
+    condition = "si_llm",   # Set the condition column to "oi_llm"
+    medium = "llm",         # Set the medium column to "llm"
+    pp = "si"               # Set the pp column to "oi"
+  )
+
+# View the modified dataset
+head(orig_si_llm)
+
+# Load in other-imagine reading condition
+orig_oi_r <- read_csv("Reading+Empathy+Intervention+-OI_5+February+2025_13.35.csv", show_col_types = FALSE) %>%
+  filter(q1 == "I do") %>%  # Keep only rows where q1 is "I do"
+  select(StartDate, EndDate, Progress, ResponseId, `Time_First Click`, `Time_Page Submit`, 
+         q1, q2, q3, starts_with("MSE_"), PROLIFIC_PID) %>%
+  mutate(
+    condition = "oi_r",   # Set the condition column to "oi_r"
+    medium = "r",         # Set the medium column to "r"
+    pp = "oi"             # Set the pp column to "oi"
+  )
+
+
+# View the modified dataset
+head(orig_oi_r)
+
+# Load in self-imagine reading condition
+orig_si_r <- read_csv("Reading+Empathy+Intervention+-SI_5+February+2025_13.45.csv", show_col_types = FALSE) %>%
+  filter(q1 == "I do") %>%  # Keep only rows where q1 is "I do"
+ select(StartDate, EndDate, Progress, ResponseId, `Time_First Click`, `Time_Page Submit`, 
+         q1, q2, q3, starts_with("MSE_"), PROLIFIC_PID) %>%
+  mutate(
+    condition = "si_r",   # Set the condition column to "oi_llm"
+    medium = "r",         # Set the medium column to "llm"
+    pp = "si"               # Set the pp column to "oi"
+  )
+
+# View the modified dataset
+head(orig_si_r)
+```
+
+# Combine all conditions
+```{r}
+# Combine the datasets
+combined_data <- bind_rows(
+  orig_oi_llm,   # Dataset 1
+  orig_si_llm,   # Dataset 2
+  orig_oi_r,     # Dataset 3
+  orig_si_r      # Dataset 4
+)
+
+# View the combined dataset
+head(combined_data)
+
+combined_data <- combined_data %>%
+  filter(!StartDate %in% c("Start Date", '{"ImportId":"startDate","timeZone":"Europe/London"}'))
+
+
+# Check the results
+head(combined_data)
+
+
+```
+
+
+## Match demographic data by P_ID
+```{r}
+# Read in the Prolific demographics dataset
+prolific_data <- read_csv("C:", show_col_types = FALSE)
+
+# Merge orig_oi_llm with prolific_data based on PROLIFIC_PID
+combined_data <- combined_data %>%
+  left_join(prolific_data, by = "PROLIFIC_PID")  # Matching based on PROLIFIC_PID
+
+# View the first few rows
+head(combined_data)
+```
+
+
+## Scoring MSE
+
+```{r}
+# Define scoring list
+qscoring <- list(
+  "MSE" = c("Not at all" = 0, 
+            "0 - Not at all" = 0,
+            "Not at all (0)" = 0,
+            "0" = 0,
+            "1" = 1, 
+            "2" = 2, 
+            "3" = 3,
+            "4" = 4,
+            "5" = 5,
+            "Entirely (6)" = 6,
+            "Entirely 6" = 6,
+            "6 -Entirely" = 6,
+            "6" = 6)
+)
+
+# Apply the transformation
+scoredat <- combined_data %>%
+  pivot_longer(cols = starts_with("MSE_"),  # Convert MSE_1 to MSE_9 into long format
+               names_to = "dv", 
+               values_to = "score") %>%
+  filter(str_detect(dv, "MSE_")) %>%  # Keep only MSE columns
+  mutate(score = recode(score, !!!qscoring[["MSE"]]))  # Recode using qscoring
+
+# Check the results
+head(scoredat)
+
+
+```
+
+
+## Demographic Data
+Will come from prolific
+
+```{r}
+scoredat$age <- as.numeric(as.character(scoredat$age))
+
+# Remove duplicates based on participant_id
+scoredat_unique <- scoredat %>%
+  distinct(participant_id, .keep_all = TRUE)  # Keeps only the first occurrence of each participant_id
+
+# Calculate count, average, standard deviation, and age range per gender
+descriptives <- scoredat_unique %>%
+  group_by(gender) %>%
+  summarise(
+    count = n(),                              
+    average_age = mean(age),    
+    sd_age = sd(age))
+
+# View descriptives
+descriptives
+
+# Calculate age range per gender
+age_range_per_gender <- scoredat_unique %>%
+  group_by(gender) %>%
+  summarise(
+    min_age = min(age),
+    max_age = max(age)
+  )
+
+# View age range per gender
+age_range_per_gender
+```
+
+### MSE scoring
+Citation: https://www.researchgate.net/figure/tems-and-Dimensions-of-the-State-Empathy-Scale_tbl1_233464674
+
+Scoring:Three 3-item Likert subscales were designed to measure state levels of cognitive, affective, and compassionate empathy based on definitions adapted from Ekman (2003): “understanding how someone is feeling, but not necessarily also feeling it” (cognitive); “physically feeling the same way as another person is feeling” (affective); and “in-the-moment feelings of compassion, sympathy or concern” (compassion). Participants rated their agreement with each item on a 7-point Likert scale (0 = not at all, 6 = entirely).
+```{r}
+# NOTE: Need to adjust what it's filtered by when I get the demo data from profilic to combine with (ie. gender, age, Prolific ID)
+mse_subscales <- scoredat %>%
+  filter(str_detect(dv, "MSE")) %>%  # Filter only MSE questions
+  group_by(PROLIFIC_PID) %>%  # Group by participant 
+  summarize(
+    state_empathy_score = mean(score, ),  # Calculate the mean score
+    .groups = "drop"
+  )
+
+# Combine mse_subscales with scoredat based on ResponseId
+scoredat <- scoredat %>%
+  left_join(mse_subscales, by = "PROLIFIC_PID")  # Merge on ResponseId
+
+# View the combined dataset
+head(scoredat)
+
+
+```
+
+### Attention check
+Flag responses that do not contain expected keywords for manual review & are less than 3 words
+```{r}
+
+# Define expected keywords (adjust based on stimuli content)
+expected_keywords <- c("Katie", "accident", "orphan", "death", "siblings", 
+                       "money", "lost", "parents", "died", "car", "crash", 
+                       "katie", "passed away")
+
+# Convert keywords into a single regex pattern (case insensitive)
+keyword_pattern <- paste(expected_keywords, collapse = "|")
+
+# Function to flag responses that do not contain relevant keywords
+flag_invalid_responses <- function(response) {
+  # Remove non-word characters and convert to lowercase
+  clean_response <- str_to_lower(str_replace_all(response, "[^\\w\\s]", ""))
+  
+  # Check if keyword exists
+  contains_keywords <- str_detect(clean_response, keyword_pattern)  # Check if any keyword exists
+  
+  # Check if response has fewer than 3 words
+  too_short <- str_count(clean_response, "\\w+") < 3  # Check if less than 3 words
+  
+  # Debug print: display if it's too short
+  if (too_short) {
+    print(paste("Too short response flagged:", response))
+  }
+  
+  if (!contains_keywords | too_short) {
+    return("FLAG")
+  } else {
+    return("VALID")
+  }
+}
+
+# Apply function to dataset and flag responses
+scoredat_flag <- scoredat %>%
+  mutate(Q3_flag = sapply(q3, flag_invalid_responses))  # Apply function to the Q3 column
+
+# Display flagged responses and check the reason
+flagged_responses <- scoredat_flag %>% filter(Q3_flag == "FLAG")
+
+# Print out flagged responses for review
+print(flagged_responses)
+
+
+
+```
+
+## Time check
+How long participants spent on the stimuli
+```{r}
+combined_data <- combined_data %>%
+  filter(!(StartDate == "Start Date" | StartDate == '{"ImportId":"startDate","timeZone":"Europe/London"}'))
+
+
+combined_data <- combined_data %>%
+  mutate(
+    # Convert to numeric to ensure the subtraction works
+    `Time_First Click` = as.numeric(`Time_First Click`),
+    `Time_Page Submit` = as.numeric(`Time_Page Submit`),
+    
+    # Calculate the time difference
+    time_diff = `Time_Page Submit` - `Time_First Click`
+  )
+
+ggplot(combined_data, aes(x = interaction(condition, medium), y = time_diff)) +
+  geom_boxplot() +
+  labs(
+    title = "Time Difference by Condition and Medium",
+    x = "Condition and Medium",
+    y = "Time Difference (seconds)"
+  ) +
+  theme_minimal()
+```
+
+
+
+### Box Plots
+Need gender from demographic data
+#### Overall MSE scores by gender
+```{r}
+plot_mse_gender <- mse_subscales %>%
+  dplyr::filter(!is.na(state_empathy_score)) %>%
+  ggplot(aes(x = gender, y = state_empathy_score, fill = gender)) +
+  geom_boxplot() +
+  scale_fill_manual(values = quest_colours) +  # Use quest_colours defined above
+  theme_minimal() +
+  labs(
+    title = "Overall Distribution of Measure of State Empathy (MSE) Scores by Gender",
+    x = "Gender", y = "MSE Score"
+  )
+
+# Show the plot
+print(plot_mse_gender)
+
+```
+#### MSE score difference by LLM vs Reading
+```{r}
+# Filter combined_data by condition (LLM vs Reading) and remove NA values for state_empathy_score
+plot_mse_llm_r <- scoredat %>%
+  dplyr::filter((state_empathy_score) & medium %in% c("llm", "r")) %>%
+  ggplot(aes(x = condition, y = state_empathy_score, fill = medium)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("llm" = "steelblue", "r" = "coral")) +  # Custom colours
+  theme_minimal() +
+  labs(
+    title = "MSE Score Differences by LLM vs Reading",
+    x = "Condition (LLM vs Reading)", y = "MSE Score"
+  )
+
+# Show the plot
+print(plot_mse_llm_r)
+
+
+```
+
+
+#### MSE score differences by Perspective Taking (OI vs SI)
+```{r}
+# Filter combined_data by condition (LLM vs Reading) and remove NA values for state_empathy_score
+plot_mse_llm_r <- scoredat %>%
+  dplyr::filter((state_empathy_score) & pp %in% c("oi", "si")) %>%
+  ggplot(aes(x = condition, y = state_empathy_score, fill = pp)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("oi" = "steelblue", "si" = "coral")) +  # Custom colours
+  theme_minimal() +
+  labs(
+    title = "MSE Score Differences by Perspective Taking",
+    x = "Condition (OI vs SI)", y = "MSE Score"
+  )
+
+# Show the plot
+print(plot_mse_llm_r)
+
+```
+
+# Data Analysis
+
+## Factorial 2x2 ANOVA
+```{r}
+# Assuming 'scoredat' is already processed and has the correct columns:
+# Check the columns first to confirm 'medium', 'pp', and 'state_empathy_score' are there
+head(scoredat)
+
+# Run the 2x2 factorial ANOVA
+anova_results <- aov(state_empathy_score ~ medium * pp, data = scoredat)
+
+# View the ANOVA table
+summary(anova_results)
+
+```
+
+# Qualitative Analysis
+## Load in files for Vader
+```{r}
+# Load in the Chatbot logs
+oi_df_messages<- read_excel("Liz Imagine-Other chatbot Experiment (4).xlsx", sheet = "Messages")
+# Apply sentiment analysis to the 'Content' column for oi
+oi_sentiment_results <- vader_df(oi_df_messages$Content)
+
+oi_df_messages <- oi_df_messages %>%
+  rename(PROLIFIC_PID = User) %>%
+  bind_cols(oi_sentiment_results) %>%
+  select(PROLIFIC_PID, Role, everything())  # Ensure 'PROLIFIC_PID' and 'Role' are included first
+
+# View the updated dataframe
+head(oi_df_messages)
+
+
+
+si_df_messages<- read_excel("Liz Self-Imagine Chatbot Experiment (1).xlsx", sheet = "Messages")
+
+si_sentiment_results <- vader_df(si_df_messages$Content)
+
+# Check again the structure of sentiment results
+head(si_sentiment_results)
+
+# Now try combining them
+si_df_messages <- si_df_messages %>%
+  rename(PROLIFIC_PID = User) %>%
+  bind_cols(si_sentiment_results) %>%
+  select(PROLIFIC_PID, Role, everything())
+
+# View the updated dataframe
+head(si_df_messages)
+
+```
+
+
+## Filter logs by user vs chatbot
+```{r}
+# Filter data for "user" role
+oi_df_user <- oi_df_messages %>%
+  filter(Role == "user")
+
+# Filter data for "assistant" role
+oi_df_chatbot <- oi_df_messages %>%
+  filter(Role == "assistant")
+
+# View the first few rows of each dataframe
+head(oi_df_user)
+head(oi_df_chatbot)
+
+# Filter data for "user" role
+si_df_user <- si_df_messages %>%
+  filter(Role == "user")
+
+# Filter data for "assistant" role
+si_df_chatbot <- si_df_messages %>%
+  filter(Role == "assistant")
+
+# View the first few rows of each dataframe
+head(si_df_user)
+head(si_df_chatbot)
+
+
+```
+## Conversation Info
+Universal POS (Part-of-Speech) Tags and Definitions:
+ADJ  - Adjective: Describes a noun (e.g., happy, large, empathetic)
+ADP  - Adposition: Prepositions or postpositions (e.g., in, on, under)
+ADV  - Adverb: Modifies verbs, adjectives, or sentences (e.g., quickly, very, always)
+AUX  - Auxiliary Verb: Helps the main verb (e.g., is, has, will)
+CCONJ - Coordinating Conjunction: Links words/phrases of equal rank (e.g., and, but, or)
+DET  - Determiner: Specifies a noun (e.g., the, a, some)
+INTJ - Interjection: Expresses emotion (e.g., wow, oh, ugh)
+NOUN - Noun: Person, place, thing, or idea (e.g., computer, empathy, study)
+NUM  - Numeral: Expresses numbers (e.g., one, 2024, first)
+PART - Particle: Small function words (e.g., to in "to go", not)
+PRON - Pronoun: Replaces a noun (e.g., he, she, it, they)
+PROPN - Proper Noun: Specific names (e.g., OpenAI, London, John)
+PUNCT - Punctuation: Marks structure (e.g., ., ?, !)
+SCONJ - Subordinating Conjunction: Connects dependent clauses (e.g., because, although)
+SYM  - Symbol: Non-word symbols (e.g., %, $, &)
+VERB - Verb: Action or state (e.g., run, think, felt)
+X    - Other: Unknown or foreign words (e.g., undefined tokens)
+
+```{r}
+# Load a pre-trained model (change 'english' to language of choice)
+model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(model$file_model)
+
+# Process text responses from the Content column in oi_df_messages
+parsed_data_oi <- udpipe_annotate(ud_model, x = oi_df_messages$Content)
+parsed_data_oi <- as.data.frame(parsed_data_oi)
+
+# Merge with original data to keep PROLIFIC_PID
+parsed_data_oi$PROLIFIC_PID <- rep(oi_df_messages$PROLIFIC_PID, times = table(parsed_data_oi$doc_id))
+
+# Display key columns
+head(parsed_data_oi[, c("PROLIFIC_PID", "sentence_id", "token", "lemma", "upos")])
+
+# Aggregate classified words by user
+classified_per_user_oi <- parsed_data_oi %>%
+  group_by(PROLIFIC_PID, upos) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Filter by Part-of-Speech (POS) categories
+nouns_oi <- subset(parsed_data_oi, upos == "NOUN")
+verbs_oi <- subset(parsed_data_oi, upos == "VERB")
+adjectives_oi <- subset(parsed_data_oi, upos == "ADJ")
+
+# Print a summary of POS counts per user
+print(table(parsed_data_oi$upos))
+print(classified_per_user_oi)
+
+# Ensure Role column is included in parsed_data_oi by merging with original dataset
+parsed_data_oi <- parsed_data_oi %>%
+  left_join(oi_df_messages[, c("PROLIFIC_PID", "Role")], by = "PROLIFIC_PID")
+
+# Count words per PROLIFIC_PID and Role
+word_count_per_user_role_oi <- parsed_data_oi %>% 
+  group_by(PROLIFIC_PID, Role) %>% 
+  summarise(word_count = n(), .groups = "drop")
+
+# Display word counts per user and role
+print(word_count_per_user_role_oi)
+
+# Count number of messages per PROLIFIC_PID and Role
+message_count_per_user_role_oi <- oi_df_messages %>% 
+  group_by(PROLIFIC_PID, Role) %>% 
+  summarise(message_count = n(), .groups = "drop")
+
+# Display message counts per user and role
+print(message_count_per_user_role_oi)
+
+
+# Load a pre-trained model (change 'english' to language of choice)
+model <- udpipe_download_model(language = "english")
+ud_model <- udpipe_load_model(model$file_model)
+
+# Process text responses from the Content column in si_df_messages
+parsed_data_si <- udpipe_annotate(ud_model, x = si_df_messages$Content)
+parsed_data_si <- as.data.frame(parsed_data_si)
+
+# Merge with original data to keep PROLIFIC_PID
+parsed_data_si$PROLIFIC_PID <- rep(si_df_messages$PROLIFIC_PID, times = table(parsed_data_si$doc_id))
+
+# Display key columns
+head(parsed_data_si[, c("PROLIFIC_PID", "sentence_id", "token", "lemma", "upos")])
+
+# Aggregate classified words by user
+classified_per_user_si <- parsed_data_si %>%
+  group_by(PROLIFIC_PID, upos) %>%
+  summarise(count = n(), .groups = "drop")
+
+# Filter by Part-of-Speech (POS) categories
+nouns_si <- subset(parsed_data_si, upos == "NOUN")
+verbs_si <- subset(parsed_data_si, upos == "VERB")
+adjectives_si <- subset(parsed_data_si, upos == "ADJ")
+
+# Print a summary of POS counts per user
+print(table(parsed_data_si$upos))
+print(classified_per_user_si)
+
+# Ensure Role column is included in parsed_data_si by merging with original dataset
+parsed_data_si <- parsed_data_si %>%
+  left_join(si_df_messages[, c("PROLIFIC_PID", "Role")], by = "PROLIFIC_PID")
+
+# Count words per PROLIFIC_PID and Role
+word_count_per_user_role_si <- parsed_data_si %>%
+  group_by(PROLIFIC_PID, Role) %>%
+  summarise(word_count = n(), .groups = "drop")
+
+# Display word counts per user and role
+print(word_count_per_user_role_si)
+
+# Count number of messages per PROLIFIC_PID and Role
+message_count_per_user_role_si <- si_df_messages %>%
+  group_by(PROLIFIC_PID, Role) %>%
+  summarise(message_count = n(), .groups = "drop")
+
+# Display message counts per user and role
+print(message_count_per_user_role_si)
+
+
+```
+
+
+## Descriptive stats
+### For users
+#### OI Users
+```{r}
+# Descriptive statistics for the OI user compound sentiment scores
+summary(oi_df_user$compound)
+
+# Histogram of compound scores
+ggplot(oi_df_user, aes(x = compound)) + 
+    geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+    theme_minimal() +
+    labs(title = "Distribution of User Other-Imagine Compound Sentiment Scores", x = "Compound Score", y = "Frequency")
+
+
+oi_user_avg <- oi_df_user %>%
+    group_by(PROLIFIC_PID, Role,text) %>%
+    summarise(
+        avg_compound = mean(compound, ),
+        avg_pos = mean(pos ),
+        avg_neg = mean(neg ),
+        avg_neu = mean(neu ),
+        .groups = "drop"
+        
+    )
+
+# View the aggregated sentiment data
+head(oi_user_avg)
+
+# Create a wordcloud of the most common words in the content
+wordcloud(words = oi_user_avg$text, min.freq = 3, scale = c(3, 0.45),colors = brewer.pal(8, "Dark2") )
+```
+
+#### SI Users
+```{r}
+
+# Descriptive statistics for the SI user compound sentiment scores
+summary(si_df_user$compound)
+
+# Histogram of compound scores
+ggplot(si_df_user, aes(x = compound)) + 
+    geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+    theme_minimal() +
+    labs(title = "Distribution of User Self-Imagine Compound Sentiment Scores", x = "Compound Score", y = "Frequency")
+
+
+si_user_avg <- si_df_user %>%
+    group_by(PROLIFIC_PID, text, Role) %>%
+    summarise(
+        avg_compound = mean(compound ),
+        avg_pos = mean(pos ),
+        avg_neg = mean(neg ),
+        avg_neu = mean(neu ),
+        .groups = "drop"
+    )
+
+# View the aggregated sentiment data
+head(si_user_avg)
+
+# Combine all words for word cloud
+all_words <- paste(parsed_data_si$token, collapse = " ")
+
+# Create the word cloud using tokenized words
+wordcloud(words = all_words, min.freq = 3, scale = c(3, 0.45), colors = brewer.pal(8, "Dark2"))
+
+
+```
+
+### For chatbots
+#### OI Chatbots
+```{r}
+# Descriptive statistics for the chatbot OI compound sentiment scores
+summary(oi_df_chatbot$compound)
+
+# Histogram of compound scores
+ggplot(oi_df_chatbot, aes(x = compound)) + 
+    geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+    theme_minimal() +
+    labs(title = "Distribution of Chatbot Other-Imagine Compound Sentiment Scores", x = "Compound Score", y = "Frequency")
+
+
+oi_chatbot_avg <- oi_df_chatbot %>%
+    group_by(PROLIFIC_PID,text, Role) %>%
+    summarise(
+        avg_compound = mean(compound, ),
+        avg_pos = mean(pos ),
+        avg_neg = mean(neg ),
+        avg_neu = mean(neu ),
+        .groups = "drop"
+    )
+
+# View the aggregated sentiment data
+head(oi_chatbot_avg)
+
+
+
+# Create a wordcloud of the most common words in the content
+wordcloud(words = oi_chatbot_avg$text, min.freq = 3, scale = c(3, 0.45),colors = brewer.pal(8, "Dark2") )
+```
+
+#### SI Chatbots
+```{r}
+
+# Descriptive statistics for the chatbot SI compound sentiment scores
+summary(si_df_chatbot$compound)
+
+# Histogram of compound scores
+ggplot(si_df_chatbot, aes(x = compound)) + 
+    geom_histogram(binwidth = 0.1, fill = "blue", color = "black") +
+    theme_minimal() +
+    labs(title = "Distribution of Chatbot Self-Imagine Compound Sentiment Scores", x = "Compound Score", y = "Frequency")
+
+
+si_chatbot_avg <- si_df_chatbot %>%
+    group_by(PROLIFIC_PID,text, Role) %>%
+    summarise(
+        avg_compound = mean(compound),
+        avg_pos = mean(pos),
+        avg_neg = mean(neg ),
+        avg_neu = mean(neu ),
+        .groups = "drop"
+    )
+
+# View the aggregated sentiment data
+head(si_chatbot_avg)
+
+
+# Create a wordcloud of the most common words in the content
+wordcloud(words = si_chatbot_avg$text, min.freq = 3, scale = c(3, 0.45),colors = brewer.pal(8, "Dark2") )
+
+
+```
+
+To calculate sentiment, VADER processes text by assigning sentiment scores to individual words, considering their context within the sentence. It then aggregates these word-level scores to calculate the compound score, which summarizes the overall sentiment of the text. The compound score ranges from -1 (most negative) to +1 (most positive). Additionally, VADER computes the percentage of positive, negative, and neutral words in the text. The difference score is obtained by subtracting the compound score of one condition (e.g., "imagine-other") from that of another (e.g., "imagine-self"). This difference score allows for comparisons of emotional tone across different conditions.
+A positive > negative score (i.e., diff_pos_neg > 0) suggests that the user expresses more positive emotions than negative ones.
+A negative > positive score (i.e., diff_pos_neg < 0) indicates a user with more negative emotional engagement.
+The neutral sentiment can provide additional context on whether users are more indifferent or balanced in their responses.
+## Difference scores & means
+### OI 
+```{r}
+
+# Combine oi_user_avg and oi_assistant_avg
+total_oi_avg <- bind_rows(oi_user_avg, oi_chatbot_avg)
+
+oi_user_sentiment <- total_oi_avg %>%
+  group_by(PROLIFIC_PID, Role) %>%
+  mutate(
+    # Calculate difference scores
+    diff_pos_neg = avg_pos - avg_neg,  # Positive - Negative difference
+    diff_pos_neu = avg_pos - avg_neu,  # Positive - Neutral difference
+    diff_neg_neu = avg_neg - avg_neu   # Negative - Neutral difference
+  ) %>%
+  ungroup()
+
+
+# View the aggregated sentiment data with difference scores
+head(oi_user_sentiment)
+
+# Calculate total average, median, and standard deviation of sentiment scores by role
+oi_avg_sentiment_by_role <- oi_df_messages %>%
+  group_by(Role) %>%
+  summarise(
+    total_avg_compound = mean(compound),
+    total_median_compound = median(compound),
+    total_sd_compound = sd(compound),
+    
+    total_avg_pos = mean(pos),
+    total_median_pos = median(pos),
+    total_sd_pos = sd(pos),
+    
+    total_avg_neg = mean(neg),
+    total_median_neg = median(neg),
+    total_sd_neg = sd(neg),
+    
+    total_avg_neu = mean(neu),
+    total_median_neu = median(neu),
+    total_sd_neu = sd(neu)
+  )
+
+# View the results
+oi_avg_sentiment_by_role
+
+
+# Reshape data from wide to long format for ggplot
+oi_user_sentiment_long <- oi_user_sentiment %>%
+  pivot_longer(cols = c(avg_pos, avg_neg, avg_neu), 
+               names_to = "Sentiment", 
+               values_to = "Score")
+
+# Rename Sentiment values for readability
+oi_user_sentiment_long$Sentiment <- recode(oi_user_sentiment_long$Sentiment, 
+                                           "avg_pos" = "Positive",
+                                           "avg_neg" = "Negative",
+                                           "avg_neu" = "Neutral")
+
+
+# Plot side-by-side histograms for Positive, Negative, and Neutral Sentiment Scores by Role
+ggplot(oi_user_sentiment_long, aes(x = Score, fill = Sentiment)) +
+  geom_histogram(binwidth = 0.05, color = "black", alpha = 0.7) +
+  facet_grid(Sentiment ~ Role, scales = "free") +  # Facet by both Sentiment and Role
+  labs(title = "Distribution of OI Sentiment Scores by Role (User vs. Assistant)",
+       x = "Sentiment Score", y = "Frequency") +
+  scale_fill_manual(values = c("Positive" = "blue", "Negative" = "red", "Neutral" = "gray")) +
+  theme_minimal()
+
+
+
+```
+### SI 
+```{r}
+
+# Combine si_user_avg and si_assistant_avg
+total_si_avg <- bind_rows(si_user_avg, si_chatbot_avg)
+
+si_user_sentiment <- total_si_avg %>%
+  group_by(PROLIFIC_PID, Role) %>%
+  mutate(
+    # Calculate difference scores
+    diff_pos_neg = avg_pos - avg_neg,  # Positive - Negative difference
+    diff_pos_neu = avg_pos - avg_neu,  # Positive - Neutral difference
+    diff_neg_neu = avg_neg - avg_neu   # Negative - Neutral difference
+  ) %>%
+  ungroup()
+
+
+# View the aggregated sentiment data with difference scores
+head(si_user_sentiment)
+
+# Calculate total average, median, and standard deviation of sentiment scores by role
+si_avg_sentiment_by_role <- si_df_messages %>%
+  group_by(Role) %>%
+  summarise(
+    total_avg_compound = mean(compound),
+    total_median_compound = median(compound),
+    total_sd_compound = sd(compound),
+    
+    total_avg_pos = mean(pos),
+    total_median_pos = median(pos),
+    total_sd_pos = sd(pos),
+    
+    total_avg_neg = mean(neg),
+    total_median_neg = median(neg),
+    total_sd_neg = sd(neg),
+    
+    total_avg_neu = mean(neu),
+    total_median_neu = median(neu),
+    total_sd_neu = sd(neu)
+  )
+
+# View the results
+si_avg_sentiment_by_role
+
+
+# Reshape data from wide to long format for ggplot
+si_user_sentiment_long <- si_user_sentiment %>%
+  pivot_longer(cols = c(avg_pos, avg_neg, avg_neu), 
+               names_to = "Sentiment", 
+               values_to = "Score")
+
+# Rename Sentiment values for readability
+si_user_sentiment_long$Sentiment <- recode(si_user_sentiment_long$Sentiment, 
+                                           "avg_pos" = "Positive",
+                                           "avg_neg" = "Negative",
+                                           "avg_neu" = "Neutral")
+
+
+# Plot side-by-side histograms for Positive, Negative, and Neutral Sentiment Scores by Role
+ggplot(si_user_sentiment_long, aes(x = Score, fill = Sentiment)) +
+  geom_histogram(binwidth = 0.05, color = "black", alpha = 0.7) +
+  facet_grid(Sentiment ~ Role, scales = "free") +  # Facet by both Sentiment and Role
+  labs(title = "Distribution of SI Sentiment Scores by Role (User vs. Assistant)",
+       x = "Sentiment Score", y = "Frequency") +
+  scale_fill_manual(values = c("Positive" = "blue", "Negative" = "red", "Neutral" = "gray")) +
+  theme_minimal()
+
+
+
+```
+
+## T-tests on OI vs SI
+Compound is the overall sentiment of the text
+```{r}
+t_test_user_compound <- t.test(oi_user_sentiment$avg_compound, si_user_sentiment$avg_compound)
+t_test_user_pos <- t.test(oi_user_sentiment$avg_pos, si_user_sentiment$avg_pos)
+t_test_user_neg <- t.test(oi_user_sentiment$avg_neg, si_user_sentiment$avg_neg)
+
+# View results
+t_test_user_compound
+t_test_user_pos
+t_test_user_neg
+
+```
+
+
+## Regression Analysis : Whether emotional tone of responses in both conditions predicts state empathy scores
+Perfect collinearity amongst predictors (linearly dependent upon one another) so we just keep pos_neg for diff between positive and negative only
+### OI user and chatbot scores with MSE
+
+```{r}
+
+# Ensure PROLIFIC_PID is character in both datasets
+scoredat_combined <- scoredat %>%
+  mutate(PROLIFIC_PID = as.character(PROLIFIC_PID))
+
+oi_user_sentiment <- oi_user_sentiment %>%
+  mutate(PROLIFIC_PID = as.character(PROLIFIC_PID))
+
+oi_llm_combined <- scoredat_combined %>%
+  filter(pp == "oi", medium == "llm") %>%
+  select(PROLIFIC_PID, state_empathy_score, everything()) %>%  # Keep state_empathy_score
+  left_join(oi_user_sentiment, by = "PROLIFIC_PID")  # Join with sentiment data
+
+
+# Filter for user role only
+oi_combined_user <- oi_llm_combined %>%
+  filter(Role == "user")
+
+oi_combined_assistant <- oi_llm_combined %>%
+  filter(Role == "assistant")
+
+
+# Regression for User Sentiment
+oi_lm_user_model <- lm(state_empathy_score ~ diff_pos_neg, data = oi_combined_user)
+
+# View the regression summary for user sentiment
+summary(oi_lm_user_model)
+
+# Create the scatter plot with regression line
+oi_user_plot <- ggplot(oi_combined_user, aes(x = diff_pos_neg, y = state_empathy_score)) +
+    geom_point() +
+    geom_smooth(method = "lm", col = "red") +
+    theme_minimal() +
+    labs(title = "Relationship Between Diff_Pos_Neg and State Empathy Score")
+
+# Print the plot to ensure it is displayed
+print(oi_user_plot)
+
+# Regression for Assistant Sentiment
+oi_lm_assistant_model <- lm(state_empathy_score ~ diff_pos_neg, data = oi_combined_assistant)
+
+# View the regression summary for assistant sentiment
+summary(oi_lm_assistant_model)
+
+# Create the scatter plot with regression line
+oi_assistant_plot <- ggplot(oi_combined_assistant, aes(x = diff_pos_neg, y = state_empathy_score)) +
+    geom_point() +
+    geom_smooth(method = "lm", col = "blue") +
+    theme_minimal() +
+    labs(title = "Relationship Between Diff_Pos_Neg and State Empathy Score")
+
+# Print the plot to ensure it is displayed
+print(oi_assistant_plot)
+
+
+```
+### SI user and chatbot scores with MSE
+```{r}
+# Ensure PROLIFIC_PID is character in both datasets
+
+
+si_user_sentiment <- si_user_sentiment %>%
+  mutate(PROLIFIC_PID = as.character(PROLIFIC_PID))
+
+si_llm_combined <- scoredat_combined %>%
+  filter(pp == "si", medium == "llm") %>%
+  select(PROLIFIC_PID, state_empathy_score, everything()) %>%  # Keep state_empathy_score
+  left_join(si_user_sentiment, by = "PROLIFIC_PID")  # Join with sentiment data
+
+
+# Filter for user role only
+si_combined_user <- si_llm_combined %>%
+  filter(Role == "user")
+
+si_combined_assistant <- si_llm_combined %>%
+  filter(Role == "assistant")
+
+
+# Regression for User Sentiment
+si_lm_user_model <- lm(state_empathy_score ~ diff_pos_neg, data = si_combined_user)
+
+# View the regression summary for user sentiment
+summary(si_lm_user_model)
+
+# Fit the linear regression model
+lm_model <- lm(state_empathy_score ~ diff_pos_neg, data = si_combined_user)
+
+# Print the model summary
+summary(lm_model)
+
+# Create the scatter plot with regression line
+si_user_plot <- ggplot(si_combined_user, aes(x = diff_pos_neg, y = state_empathy_score)) +
+    geom_point() +
+    geom_smooth(method = "lm", col = "red") +
+    theme_minimal() +
+    labs(title = "Relationship Between Diff_Pos_Neg and State Empathy Score")
+
+# Print the plot to ensure it is displayed
+print(si_user_plot)
+
+
+# Regression for Assistant Sentiment
+si_lm_assistant_model <- lm(state_empathy_score ~ diff_pos_neg, data = si_combined_assistant)
+
+# View the regression summary for assistant sentiment
+summary(si_lm_assistant_model)
+
+si_assistant_plot <- ggplot(si_combined_assistant, aes(x = diff_pos_neg, y = state_empathy_score)) +
+    geom_point() +
+    geom_smooth(method = "lm", col = "blue") +
+    theme_minimal() +
+    labs(title = "Relationship Between Diff_Pos_Neg and State Empathy Score")
+
+print(si_assistant_plot)
+```
+
+## ANCOVA
+To test if sentiment scores predict state empathy scores, while controlling for the condition
+```{r}
+
+#Combine both conditions, plus with their state empathy scores
+both_llms <- bind_rows(oi_llm_combined, si_llm_combined)
+
+# ANOVA model including both sentiment scores and condition
+ancova_model <- aov(state_empathy_score ~ diff_pos_neg * factor(condition) + factor(pp), data = both_llms)
+
+# View the ANCOVA summary
+summary(ancova_model)
+
+
+```
+

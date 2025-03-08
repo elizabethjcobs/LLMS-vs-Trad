@@ -19,9 +19,13 @@ The research compares the effectiveness of these methods in evoking empathy duri
 
 ## Key Features of the Code
 Chatbot Interaction: Facilitates self-imagine and other-imagine perspective-taking exercises to explore empathy responses.
+
 Data Collection: Collects data on emotional engagement and empathy levels from users interacting with chatbots or reading text-based transcripts.
+
 Text Analysis with VADER: VADER (Valence Aware Dictionary and sEntiment Reasoner) is used for sentiment analysis of both chatbot and user responses. VADER provides a simple, lexicon-based tool for analyzing text in terms of its sentiment (positive, negative, neutral), which is essential for measuring emotional engagement and empathy levels throughout the interactions.
+
 Analysis Framework: Designed to support the comparison of empathy levels between the different conditions (medium and perspective-taking) based on the sentiment scores obtained from VADER.
+
 Visualisation: Includes graphs and data visualizations for analyzing the results of the experiment.
 
 ## Research Contributions
